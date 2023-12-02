@@ -1,3 +1,17 @@
+# Copyright (c) farm-ng, inc.
+#
+# Licensed under the Amiga Development Kit License (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://github.com/farm-ng/amiga-dev-kit/blob/main/LICENSE
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 RelativeLayout:
     Button:
         id: back_btn_layout
@@ -10,7 +24,55 @@ RelativeLayout:
             source: "assets/back_button_normal.png" if self.parent.state == "normal" else "assets/back_button_down.png"
             pos: self.parent.pos
             size: self.parent.size
-    Label:
-        id: counter_label
-        text: "Tic: 0"
-        font_size: 40
+    BoxLayout:
+        orientation: 'horizontal'
+        BoxLayout:
+            size_hint_x: 0.3
+            orientation: 'vertical'
+            Widget:
+                size_hint_y: 2.0
+            Label:
+                text: "Amiga State:"
+                font_size: 18
+                size_hint_y: 0.5
+            Label:
+                text: app.amiga_state
+                font_size: 18
+            Widget: # Empty placeholder
+            Label:
+                text: "Speed [m/s]:"
+                font_size: 18
+                size_hint_y: 0.5
+            Label:
+                text: app.amiga_speed
+                font_size: 18
+            Widget: # Empty placeholder
+            Label:
+                text: "Angular Rate [rad/s]:"
+                font_size: 18
+                size_hint_y: 0.5
+            Label:
+                text: app.amiga_rate
+                font_size: 18
+            Widget:
+                size_hint_y: 2.0
+        VirtualJoystickWidget:
+            id: joystick
+        TabbedPanel:
+            do_default_tab: False
+            TabbedPanelItem:
+                text: "Rgb"
+                Image:
+                    id: rgb
+            TabbedPanelItem:
+                text: "Disparity"
+                Image:
+                    id: disparity
+            TabbedPanelItem:
+                text: "Left"
+                Image:
+                    id: left
+            TabbedPanelItem:
+                text: "Right"
+                Image:
+                    id: right
