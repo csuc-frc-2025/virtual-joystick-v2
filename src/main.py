@@ -51,6 +51,8 @@ class KivyVirtualJoystick(App):
     amiga_speed = StringProperty("???")
     amiga_rate = StringProperty("???")
 
+    STREAM_NAMES = ["rgb", "disparity", "left", "right"]
+
 
     def __init__(self, service_config: EventServiceConfig, stream_every_n: int) -> None:
         super().__init__()
@@ -63,6 +65,9 @@ class KivyVirtualJoystick(App):
         self.async_tasks: list[asyncio.Task] = []
 
         self.image_decoder = ImageDecoder()
+        self.view_name = 'rgb'
+
+        print(EventServiceConfigList)
 
         # self.image_decoder = TurboJPEG('/mnt/managed_home/farm-ng-user-oliverfuchs/virtual-joystick-kivy/venv/lib/python3.8/site-packages/turbojpeg.py')
 
@@ -72,6 +77,10 @@ class KivyVirtualJoystick(App):
     def on_exit_btn(self) -> None:
         """Kills the running kivy application."""
         App.get_running_app().stop()
+    
+    def update_view(self, view_name: str):
+        print(view_name)
+        self.view_name = view_name
 
     async def app_func(self):
         async def run_wrapper() -> None:
@@ -82,8 +91,10 @@ class KivyVirtualJoystick(App):
                 task.cancel()
 
         # Camera task
-        self.async_tasks: list[asyncio.Task] = [
-            asyncio.create_task(self.stream_camera("rgb"))
+        print(self.view_name)
+        self.async_tasks: list[asyncio.Task] = [       
+            asyncio.create_task(self.stream_camera(view_name))
+            for view_name in self.STREAM_NAMES
         ]
 
         return await asyncio.gather(run_wrapper(), *self.async_tasks)
@@ -94,13 +105,16 @@ class KivyVirtualJoystick(App):
         """Subscribes to the camera service and populates the tabbed panel with all 4 image streams."""
         while self.root is None:
             await asyncio.sleep(0.01)
-
+        print("how often does this happen")
         async for _, message in EventClient(self.service_config).subscribe(
             SubscribeRequest(
                 uri=Uri(path=f"/{view_name}"), every_n=self.stream_every_n
             ),
             decode=True,
         ):
+            print("can you read this: " + self.view_name)
+            print(f"/{view_name}")
+            
             try:
                 img = self.image_decoder.decode(message.image_data)
             except Exception as e:
@@ -151,6 +165,7 @@ if __name__ == "__main__":
     )
 
     oak_service_config = find_config_by_name(service_config_list, args.camera_name)
+    # print(oak_service_config)
     if oak_service_config is None:
         raise RuntimeError(f"Could not find service config for {args.camera_name}")
 

@@ -62,10 +62,12 @@ RelativeLayout:
             do_default_tab: False
             TabbedPanelItem:
                 text: "Rgb"
+                on_press: app.update_view('rgb')
                 Image:
                     id: rgb
             TabbedPanelItem:
                 text: "Disparity"
+                on_press: app.update_view('disparity')
                 Image:
                     id: disparity
             TabbedPanelItem:
