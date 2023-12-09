@@ -72,9 +72,11 @@ RelativeLayout:
                     id: disparity
             TabbedPanelItem:
                 text: "Left"
+                on_press: app.update_view('left')
                 Image:
                     id: left
             TabbedPanelItem:
                 text: "Right"
+                on_press: app.update_view('right')
                 Image:
                     id: right

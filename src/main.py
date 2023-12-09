@@ -3,22 +3,23 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
-from amiga_package import ops
-
-from virtual_joystick.joystick import VirtualJoystickWidget
-
-# import internal libs
+from farm_ng.canbus.canbus_pb2 import Twist2d
 from farm_ng.core.event_client import EventClient
 from farm_ng.core.event_service_pb2 import EventServiceConfig
 from farm_ng.core.event_service_pb2 import EventServiceConfigList
 from farm_ng.core.event_service_pb2 import SubscribeRequest
+from farm_ng.core.events_file_reader import payload_to_protobuf
 from farm_ng.core.events_file_reader import proto_from_json_file
 from farm_ng.core.uri_pb2 import Uri
+from kornia_rs import ImageDecoder
+from virtual_joystick.joystick import VirtualJoystickWidget
+
+# import internal libs
 
 # Must come before kivy imports
 os.environ["KIVY_NO_ARGS"] = "1"
@@ -39,37 +40,44 @@ from kivy.graphics.texture import Texture  # noqa: E402
 from kivy.lang.builder import Builder  # noqa: E402
 from kivy.properties import StringProperty  # noqa: E402
 
-from turbojpeg import TurboJPEG
-from kornia_rs import ImageDecoder
 
 logger = logging.getLogger("amiga.apps.camera")
+
+MAX_LINEAR_VELOCITY_MPS = 0.5
+MAX_ANGULAR_VELOCITY_RPS = 0.5
+VELOCITY_INCREMENT = 0.05
 
 
 class KivyVirtualJoystick(App):
     """Base class for the main Kivy app."""
+
     amiga_state = StringProperty("???")
     amiga_speed = StringProperty("???")
     amiga_rate = StringProperty("???")
 
     STREAM_NAMES = ["rgb", "disparity", "left", "right"]
 
-
-    def __init__(self, service_config: EventServiceConfig, stream_every_n: int) -> None:
+    def __init__(
+        self,
+        oak_service_config: EventServiceConfig,
+        stream_every_n: int,
+        canbus_service_config: EventServiceConfig,
+    ) -> None:
         super().__init__()
 
         self.counter: int = 0
 
-        self.service_config = service_config
+        self.oak_service_config = oak_service_config
         self.stream_every_n = stream_every_n
+        self.canbus_service_config = canbus_service_config
 
         self.async_tasks: list[asyncio.Task] = []
 
         self.image_decoder = ImageDecoder()
-        self.view_name = 'rgb'
+        self.view_name = "rgb"
 
-        print(EventServiceConfigList)
-
-        # self.image_decoder = TurboJPEG('/mnt/managed_home/farm-ng-user-oliverfuchs/virtual-joystick-kivy/venv/lib/python3.8/site-packages/turbojpeg.py')
+        self.max_speed: float = 1.0
+        self.max_angular_rate: float = 1.0
 
     def build(self):
         return Builder.load_file("res/main.kv")
@@ -77,9 +85,9 @@ class KivyVirtualJoystick(App):
     def on_exit_btn(self) -> None:
         """Kills the running kivy application."""
         App.get_running_app().stop()
-    
+
     def update_view(self, view_name: str):
-        print(view_name)
+        # print(view_name)
         self.view_name = view_name
 
     async def app_func(self):
@@ -92,10 +100,14 @@ class KivyVirtualJoystick(App):
 
         # Camera task
         print(self.view_name)
-        self.async_tasks: list[asyncio.Task] = [       
+        self.async_tasks: list[asyncio.Task] = [
             asyncio.create_task(self.stream_camera(view_name))
             for view_name in self.STREAM_NAMES
         ]
+
+        self.async_tasks.append(
+            asyncio.ensure_future(self.pose_generator(self.canbus_service_config))
+        )
 
         return await asyncio.gather(run_wrapper(), *self.async_tasks)
 
@@ -105,32 +117,59 @@ class KivyVirtualJoystick(App):
         """Subscribes to the camera service and populates the tabbed panel with all 4 image streams."""
         while self.root is None:
             await asyncio.sleep(0.01)
-        print("how often does this happen")
-        async for _, message in EventClient(self.service_config).subscribe(
+
+        async for event, payload in EventClient(self.oak_service_config).subscribe(
+            # async for _, message in EventClient(self.service_config).subscribe(
             SubscribeRequest(
                 uri=Uri(path=f"/{view_name}"), every_n=self.stream_every_n
             ),
-            decode=True,
+            decode=False,
         ):
-            print("can you read this: " + self.view_name)
-            print(f"/{view_name}")
-            
-            try:
-                img = self.image_decoder.decode(message.image_data)
-            except Exception as e:
-                logger.exception(f"Error decoding image: {e}")
-                continue
 
-            # create the opengl texture and set it to the image
-            texture = Texture.create(size=(img.shape[1], img.shape[0]), icolorfmt="rgb")
-            texture.flip_vertical()
-            texture.blit_buffer(
-                bytes(img.data),
-                colorfmt="rgb",
-                bufferfmt="ubyte",
-                mipmap_generation=False,
-            )
-            self.root.ids[view_name].texture = texture
+            if view_name == self.view_name:
+                message = payload_to_protobuf(event, payload)
+                try:
+                    img = self.image_decoder.decode(message.image_data)
+                except Exception as e:
+                    logger.exception(f"Error decoding image: {e}")
+                    continue
+
+                # create the opengl texture and set it to the image
+                texture = Texture.create(
+                    size=(img.shape[1], img.shape[0]), icolorfmt="rgb"
+                )
+                texture.flip_vertical()
+                texture.blit_buffer(
+                    bytes(img.data),
+                    colorfmt="rgb",
+                    bufferfmt="ubyte",
+                    mipmap_generation=False,
+                )
+                self.root.ids[view_name].texture = texture
+
+    async def pose_generator(
+        self, canbus_service_config: EventServiceConfig, period: float = 0.02
+    ):
+        """The pose generator yields an AmigaRpdo1 (auto control command) for the canbus client to send on the bus
+        at the specified period (recommended 50hz) based on the onscreen joystick position."""
+        while self.root is None:
+            await asyncio.sleep(0.01)
+
+        twist = Twist2d()
+
+        joystick: VirtualJoystickWidget = self.root.ids["joystick"]
+
+        # config: EventServiceConfig = proto_from_json_file(service_config_path, EventServiceConfig())
+        client: EventClient = EventClient(canbus_service_config)
+
+        while True:
+            print(joystick.joystick_pose.y, -joystick.joystick_pose.x)
+            twist.linear_velocity_x = self.max_speed * joystick.joystick_pose.y
+            twist.angular_velocity = self.max_angular_rate * -joystick.joystick_pose.x
+            # print(twist)
+            await client.request_reply("/twist", twist)
+            await asyncio.sleep(period)
+
 
 def find_config_by_name(
     service_configs: EventServiceConfigList, name: str
@@ -154,7 +193,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--service-config", type=Path, default="/opt/farmng/config.json"
     )
-    parser.add_argument("--camera-name", type=str, default="oak1")
+    parser.add_argument("--camera-name", type=str, default="oak0")
     parser.add_argument(
         "--stream-every-n", type=int, default=1, help="Streaming frequency"
     )
@@ -165,14 +204,19 @@ if __name__ == "__main__":
     )
 
     oak_service_config = find_config_by_name(service_config_list, args.camera_name)
-    # print(oak_service_config)
+    canbus_service_config = find_config_by_name(service_config_list, "canbus")
+
     if oak_service_config is None:
         raise RuntimeError(f"Could not find service config for {args.camera_name}")
 
     loop = asyncio.get_event_loop()
 
     try:
-        loop.run_until_complete(KivyVirtualJoystick(oak_service_config, args.stream_every_n).app_func())
+        loop.run_until_complete(
+            KivyVirtualJoystick(
+                oak_service_config, args.stream_every_n, canbus_service_config
+            ).app_func()
+        )
     except asyncio.CancelledError:
         pass
     loop.close()
