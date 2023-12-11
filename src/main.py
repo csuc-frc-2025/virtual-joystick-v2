@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Literal
 
 from farm_ng.canbus.canbus_pb2 import Twist2d
+from farm_ng.canbus.packet import AmigaControlState
+from farm_ng.canbus.packet import AmigaTpdo1
 from farm_ng.core.event_client import EventClient
 from farm_ng.core.event_service_pb2 import EventServiceConfig
 from farm_ng.core.event_service_pb2 import EventServiceConfigList
@@ -160,13 +162,26 @@ class KivyVirtualJoystick(App):
         joystick: VirtualJoystickWidget = self.root.ids["joystick"]
 
         # config: EventServiceConfig = proto_from_json_file(service_config_path, EventServiceConfig())
-        client: EventClient = EventClient(canbus_service_config)
+        client: EventClient = EventClient(self.canbus_service_config)
 
-        while True:
-            print(joystick.joystick_pose.y, -joystick.joystick_pose.x)
+        # print(self.canbus_service_config)
+        async for event, payload in EventClient(self.canbus_service_config).subscribe(
+            # async for _, message in EventClient(self.service_config).subscribe(
+            SubscribeRequest(uri=Uri(path="/state"), every_n=self.stream_every_n),
+            decode=False,
+        ):
+            message = payload_to_protobuf(event, payload)
+            # print(message.amiga_tpdo1)
+            tpdo1_state = AmigaTpdo1(message.amiga_tpdo1).state.control_state
+            state_string = str(AmigaControlState(tpdo1_state)).split(".")[1]
+
+            # print(joystick.joystick_pose.y, -joystick.joystick_pose.x)
             twist.linear_velocity_x = self.max_speed * joystick.joystick_pose.y
             twist.angular_velocity = self.max_angular_rate * -joystick.joystick_pose.x
-            # print(twist)
+
+            self.amiga_state = state_string
+            self.amiga_speed = "{:.4f}".format(twist.linear_velocity_x)
+            self.amiga_rate = "{:.4f}".format(twist.angular_velocity)
             await client.request_reply("/twist", twist)
             await asyncio.sleep(period)
 
