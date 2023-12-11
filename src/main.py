@@ -110,22 +110,24 @@ class KivyVirtualJoystick(App):
 
         print(self.view_name)
         self.tasks: list[asyncio.Task] = [
-            asyncio.create_task(self.stream_camera(clients, view_name))
+            asyncio.create_task(self.stream_camera(clients["oak0"], view_name))
             for view_name in self.STREAM_NAMES
         ]
 
-        self.tasks.append(asyncio.ensure_future(self.pose_generator(clients)))
+        self.tasks.append(asyncio.ensure_future(self.pose_generator(clients["canbus"])))
 
         return await asyncio.gather(*self.tasks)
 
     async def stream_camera(
-        self, view_name: Literal["rgb", "disparity", "left", "right"] = "rgb"
+        self,
+        oak_client: EventClient,
+        view_name: Literal["rgb", "disparity", "left", "right"] = "rgb",
     ) -> None:
         """Subscribes to the camera service and populates the tabbed panel with all 4 image streams."""
         while self.root is None:
             await asyncio.sleep(0.01)
 
-        async for event, payload in EventClient(self.oak_service_config).subscribe(
+        async for event, payload in oak_client.subscribe(
             # async for _, message in EventClient(self.service_config).subscribe(
             SubscribeRequest(
                 uri=Uri(path=f"/{view_name}"), every_n=self.stream_every_n
@@ -154,9 +156,7 @@ class KivyVirtualJoystick(App):
                 )
                 self.root.ids[view_name].texture = texture
 
-    async def pose_generator(
-        self, canbus_service_config: EventServiceConfig, period: float = 0.02
-    ):
+    async def pose_generator(self, canbus_client: EventClient, period: float = 0.02):
         """The pose generator yields an AmigaRpdo1 (auto control command) for the canbus client to send on the bus
         at the specified period (recommended 50hz) based on the onscreen joystick position."""
         while self.root is None:
@@ -166,11 +166,8 @@ class KivyVirtualJoystick(App):
 
         joystick: VirtualJoystickWidget = self.root.ids["joystick"]
 
-        # config: EventServiceConfig = proto_from_json_file(service_config_path, EventServiceConfig())
-        client: EventClient = EventClient(self.canbus_service_config)
-
         # print(self.canbus_service_config)
-        async for event, payload in EventClient(self.canbus_service_config).subscribe(
+        async for event, payload in canbus_client.subscribe(
             # async for _, message in EventClient(self.service_config).subscribe(
             SubscribeRequest(uri=Uri(path="/state"), every_n=self.stream_every_n),
             decode=False,
@@ -187,7 +184,7 @@ class KivyVirtualJoystick(App):
             self.amiga_state = state_string
             self.amiga_speed = "{:.4f}".format(twist.linear_velocity_x)
             self.amiga_rate = "{:.4f}".format(twist.angular_velocity)
-            await client.request_reply("/twist", twist)
+            await canbus_client.request_reply("/twist", twist)
             await asyncio.sleep(period)
 
 
