@@ -94,7 +94,7 @@ class KivyVirtualJoystick(App):
         clients: dict[str, EventClient] = {}
         expected_configs = ["oak0", "canbus"]
         config_list = proto_from_json_file(
-            args.service_config, EventServiceConfigList()
+            self.service_config, EventServiceConfigList()
         )
         for config in config_list.configs:
             if config.name in expected_configs:
@@ -104,11 +104,14 @@ class KivyVirtualJoystick(App):
         for config in expected_configs:
             if config not in clients:
                 raise RuntimeError(
-                    f"No {config} service config in {args.service_config}"
+                    f"No {config} service config in {self.service_config}"
                 )
+            # print(config)
         # Camera task
 
-        print(self.view_name)
+        # print(self.view_name)
+        # print(config_list)
+        # print(type(clients["oak0"]))
         self.tasks: list[asyncio.Task] = [
             asyncio.create_task(self.stream_camera(clients["oak0"], view_name))
             for view_name in self.STREAM_NAMES
@@ -123,9 +126,12 @@ class KivyVirtualJoystick(App):
         oak_client: EventClient,
         view_name: Literal["rgb", "disparity", "left", "right"] = "rgb",
     ) -> None:
+
         """Subscribes to the camera service and populates the tabbed panel with all 4 image streams."""
         while self.root is None:
             await asyncio.sleep(0.01)
+
+        print("oak_client")
 
         async for event, payload in oak_client.subscribe(
             # async for _, message in EventClient(self.service_config).subscribe(
@@ -134,7 +140,7 @@ class KivyVirtualJoystick(App):
             ),
             decode=False,
         ):
-
+            print("Test")
             if view_name == self.view_name:
                 message = payload_to_protobuf(event, payload)
                 try:
@@ -210,19 +216,6 @@ if __name__ == "__main__":
     parser.add_argument("--service-config", type=Path, default="service_config.json")
 
     args = parser.parse_args()
-
-    # service_config_list: EventServiceConfigList = proto_from_json_file(
-    #     args.service_config, EventServiceConfigList()
-    # )
-
-    # print(service_config_list)
-
-    # oak_service_config = find_config_by_name(service_config_list, "oak0")
-    # canbus_service_config = find_config_by_name(service_config_list, "canbus")
-
-    # print(oak_service_config)
-    # if oak_service_config is None:
-    #     raise RuntimeError(f"Could not find service config for {args.camera_name}")
 
     loop = asyncio.get_event_loop()
 
