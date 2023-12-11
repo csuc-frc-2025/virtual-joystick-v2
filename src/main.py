@@ -61,21 +61,18 @@ class KivyVirtualJoystick(App):
 
     def __init__(
         self,
-        oak_service_config: EventServiceConfig,
-        stream_every_n: int,
-        canbus_service_config: EventServiceConfig,
+        service_config: EventServiceConfig,
     ) -> None:
         super().__init__()
 
         self.counter: int = 0
 
-        self.oak_service_config = oak_service_config
-        self.stream_every_n = stream_every_n
-        self.canbus_service_config = canbus_service_config
+        self.service_config = service_config
 
         self.async_tasks: list[asyncio.Task] = []
 
         self.image_decoder = ImageDecoder()
+
         self.view_name = "rgb"
 
         self.max_speed: float = 1.0
@@ -93,25 +90,33 @@ class KivyVirtualJoystick(App):
         self.view_name = view_name
 
     async def app_func(self):
-        async def run_wrapper() -> None:
-            # we don't actually need to set asyncio as the lib because it is
-            # the default, but it doesn't hurt to be explicit
-            await self.async_run(async_lib="asyncio")
-            for task in self.async_tasks:
-                task.cancel()
 
+        clients: dict[str, EventClient] = {}
+        expected_configs = ["oak0", "canbus"]
+        config_list = proto_from_json_file(
+            args.service_config, EventServiceConfigList()
+        )
+        for config in config_list.configs:
+            if config.name in expected_configs:
+                clients[config.name] = EventClient(config)
+
+        # Confirm that EventClients were created for all required services
+        for config in expected_configs:
+            if config not in clients:
+                raise RuntimeError(
+                    f"No {config} service config in {args.service_config}"
+                )
         # Camera task
+
         print(self.view_name)
-        self.async_tasks: list[asyncio.Task] = [
-            asyncio.create_task(self.stream_camera(view_name))
+        self.tasks: list[asyncio.Task] = [
+            asyncio.create_task(self.stream_camera(clients, view_name))
             for view_name in self.STREAM_NAMES
         ]
 
-        self.async_tasks.append(
-            asyncio.ensure_future(self.pose_generator(self.canbus_service_config))
-        )
+        self.tasks.append(asyncio.ensure_future(self.pose_generator(clients)))
 
-        return await asyncio.gather(run_wrapper(), *self.async_tasks)
+        return await asyncio.gather(*self.tasks)
 
     async def stream_camera(
         self, view_name: Literal["rgb", "disparity", "left", "right"] = "rgb"
@@ -205,33 +210,27 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="template-app")
 
     # Add additional command line arguments here
-    parser.add_argument(
-        "--service-config", type=Path, default="/opt/farmng/config.json"
-    )
-    parser.add_argument("--camera-name", type=str, default="oak0")
-    parser.add_argument(
-        "--stream-every-n", type=int, default=1, help="Streaming frequency"
-    )
+    parser.add_argument("--service-config", type=Path, default="service_config.json")
+
     args = parser.parse_args()
 
-    service_config_list: EventServiceConfigList = proto_from_json_file(
-        args.service_config, EventServiceConfigList()
-    )
+    # service_config_list: EventServiceConfigList = proto_from_json_file(
+    #     args.service_config, EventServiceConfigList()
+    # )
 
-    oak_service_config = find_config_by_name(service_config_list, args.camera_name)
-    canbus_service_config = find_config_by_name(service_config_list, "canbus")
+    # print(service_config_list)
 
-    if oak_service_config is None:
-        raise RuntimeError(f"Could not find service config for {args.camera_name}")
+    # oak_service_config = find_config_by_name(service_config_list, "oak0")
+    # canbus_service_config = find_config_by_name(service_config_list, "canbus")
+
+    # print(oak_service_config)
+    # if oak_service_config is None:
+    #     raise RuntimeError(f"Could not find service config for {args.camera_name}")
 
     loop = asyncio.get_event_loop()
 
     try:
-        loop.run_until_complete(
-            KivyVirtualJoystick(
-                oak_service_config, args.stream_every_n, canbus_service_config
-            ).app_func()
-        )
+        loop.run_until_complete(KivyVirtualJoystick(args.service_config).app_func())
     except asyncio.CancelledError:
         pass
     loop.close()
