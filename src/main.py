@@ -86,7 +86,6 @@ class KivyVirtualJoystick(App):
         App.get_running_app().stop()
 
     def update_view(self, view_name: str):
-        # print(view_name)
         self.view_name = view_name
 
     async def app_func(self):
@@ -98,32 +97,34 @@ class KivyVirtualJoystick(App):
             for task in self.async_tasks:
                 task.cancel()
 
-        clients: dict[str, EventClient] = {}
-
-        expected_configs = ["oak0", "canbus"]
-
         config_list = proto_from_json_file(
             self.service_config, EventServiceConfigList()
         )
+
+        oak0_client: EventClient | None = None
+        canbus_client: EventClient | None = None
+
+
         for config in config_list.configs:
-            if config.name in expected_configs:
-                clients[config.name] = EventClient(config)
+            if config.name == "oak0":
+                oak0_client = EventClient(config)
+            elif config.name == "canbus":
+                canbus_client = EventClient(config)
+
 
         # Confirm that EventClients were created for all required services
-        for config in expected_configs:
-            if config not in clients:
-                raise RuntimeError(
-                    f"No {config} service config in {self.service_config}"
-                )
-            # print(config)
+        if None in [oak0_client,canbus_client]:
+            raise RuntimeError(
+                f"No {config} service config in {self.service_config}"
+            )
 
         # Camera task
         self.tasks: list[asyncio.Task] = [
-            asyncio.create_task(self.stream_camera(clients["oak0"], view_name))
+            asyncio.create_task(self.stream_camera(oak0_client, view_name))
             for view_name in self.STREAM_NAMES
         ]
 
-        self.tasks.append(asyncio.ensure_future(self.pose_generator(clients["canbus"])))
+        self.tasks.append(asyncio.ensure_future(self.pose_generator(canbus_client)))
 
         return await asyncio.gather(run_wrapper(),*self.tasks)
 
@@ -137,17 +138,14 @@ class KivyVirtualJoystick(App):
         while self.root is None:
             await asyncio.sleep(0.01)
 
-        # print(oak_client.config.subscriptions[0].every_n)
         rate = oak_client.config.subscriptions[0].every_n
 
         async for event, payload in oak_client.subscribe(
-            # async for _, message in EventClient(self.service_config).subscribe(
             SubscribeRequest(
                 uri=Uri(path=f"/{view_name}"), every_n=rate
             ),
             decode=False,
         ):
-            # print("Test")
             if view_name == self.view_name:
                 message = payload_to_protobuf(event, payload)
                 try:
@@ -179,27 +177,22 @@ class KivyVirtualJoystick(App):
         
         joystick: VirtualJoystickWidget = self.root.ids["joystick"]
 
-        # print(self.canbus_service_config)
-
         rate = canbus_client.config.subscriptions[0].every_n
 
         async for event, payload in canbus_client.subscribe(
-            # async for _, message in EventClient(self.service_config).subscribe(
             SubscribeRequest(uri=Uri(path="/state"), every_n=rate),
             decode=False,
         ):
             message = payload_to_protobuf(event, payload)
-            # print(message.amiga_tpdo1)
-            tpdo1_state = AmigaTpdo1(message.amiga_tpdo1).state.control_state
-            state_string = str(AmigaControlState(tpdo1_state)).split(".")[1]
+            tpdo1 = AmigaTpdo1.from_proto(message.amiga_tpdo1)
 
-            # print(joystick.joystick_pose.y, -joystick.joystick_pose.x)
             twist.linear_velocity_x = self.max_speed * joystick.joystick_pose.y
             twist.angular_velocity = self.max_angular_rate * -joystick.joystick_pose.x
 
-            self.amiga_state = state_string
+            self.amiga_state = tpdo1.state.name
             self.amiga_speed = "{:.4f}".format(twist.linear_velocity_x)
             self.amiga_rate = "{:.4f}".format(twist.angular_velocity)
+
             await canbus_client.request_reply("/twist", twist)
             await asyncio.sleep(period)
 
