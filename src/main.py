@@ -91,8 +91,17 @@ class KivyVirtualJoystick(App):
 
     async def app_func(self):
 
+        async def run_wrapper() -> None:
+            # we don't actually need to set asyncio as the lib because it is
+            # the default, but it doesn't hurt to be explicit
+            await self.async_run(async_lib="asyncio")
+            for task in self.async_tasks:
+                task.cancel()
+
         clients: dict[str, EventClient] = {}
+
         expected_configs = ["oak0", "canbus"]
+
         config_list = proto_from_json_file(
             self.service_config, EventServiceConfigList()
         )
@@ -107,11 +116,8 @@ class KivyVirtualJoystick(App):
                     f"No {config} service config in {self.service_config}"
                 )
             # print(config)
-        # Camera task
 
-        # print(self.view_name)
-        # print(config_list)
-        # print(type(clients["oak0"]))
+        # Camera task
         self.tasks: list[asyncio.Task] = [
             asyncio.create_task(self.stream_camera(clients["oak0"], view_name))
             for view_name in self.STREAM_NAMES
@@ -119,7 +125,7 @@ class KivyVirtualJoystick(App):
 
         self.tasks.append(asyncio.ensure_future(self.pose_generator(clients["canbus"])))
 
-        return await asyncio.gather(*self.tasks)
+        return await asyncio.gather(run_wrapper(),*self.tasks)
 
     async def stream_camera(
         self,
@@ -131,16 +137,17 @@ class KivyVirtualJoystick(App):
         while self.root is None:
             await asyncio.sleep(0.01)
 
-        print("oak_client")
+        # print(oak_client.config.subscriptions[0].every_n)
+        rate = oak_client.config.subscriptions[0].every_n
 
         async for event, payload in oak_client.subscribe(
             # async for _, message in EventClient(self.service_config).subscribe(
             SubscribeRequest(
-                uri=Uri(path=f"/{view_name}"), every_n=self.stream_every_n
+                uri=Uri(path=f"/{view_name}"), every_n=rate
             ),
             decode=False,
         ):
-            print("Test")
+            # print("Test")
             if view_name == self.view_name:
                 message = payload_to_protobuf(event, payload)
                 try:
@@ -169,13 +176,16 @@ class KivyVirtualJoystick(App):
             await asyncio.sleep(0.01)
 
         twist = Twist2d()
-
+        
         joystick: VirtualJoystickWidget = self.root.ids["joystick"]
 
         # print(self.canbus_service_config)
+
+        rate = canbus_client.config.subscriptions[0].every_n
+
         async for event, payload in canbus_client.subscribe(
             # async for _, message in EventClient(self.service_config).subscribe(
-            SubscribeRequest(uri=Uri(path="/state"), every_n=self.stream_every_n),
+            SubscribeRequest(uri=Uri(path="/state"), every_n=rate),
             decode=False,
         ):
             message = payload_to_protobuf(event, payload)
