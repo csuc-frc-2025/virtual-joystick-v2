@@ -1,0 +1,29 @@
+{
+    "configs": [
+        {
+        "name": "canbus",
+        "port": 6001,
+        "host": "localhost",
+        "log_level": "INFO",
+        "subscriptions": [
+            {
+                "every_n": 5
+            }
+        ]
+    },{
+        "name": "oak0",
+        "port": 50010,
+        "host": "localhost",
+        "log_level": "INFO",
+        "subscriptions": [
+            {
+                "uri": {
+                    "path": "/rgb",
+                    "query": "service_name=oak0"
+                },
+                "every_n": 3
+            }
+        ]
+    }
+    ]
+}
