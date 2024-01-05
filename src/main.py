@@ -18,7 +18,8 @@ from farm_ng.core.event_service_pb2 import SubscribeRequest
 from farm_ng.core.events_file_reader import payload_to_protobuf
 from farm_ng.core.events_file_reader import proto_from_json_file
 from farm_ng.core.uri_pb2 import Uri
-from kornia_rs import ImageDecoder
+from turbojpeg import TurboJPEG
+
 from virtual_joystick.joystick import VirtualJoystickWidget
 
 # import internal libs
@@ -71,7 +72,7 @@ class KivyVirtualJoystick(App):
 
         self.async_tasks: list[asyncio.Task] = []
 
-        self.image_decoder = ImageDecoder()
+        self.image_decoder = TurboJPEG()
 
         self.view_name = "rgb"
 
@@ -83,6 +84,8 @@ class KivyVirtualJoystick(App):
 
     def on_exit_btn(self) -> None:
         """Kills the running kivy application."""
+        for task in self.tasks:
+            task.cancel()
         App.get_running_app().stop()
 
     def update_view(self, view_name: str):
@@ -124,7 +127,7 @@ class KivyVirtualJoystick(App):
             for view_name in self.STREAM_NAMES
         ]
 
-        self.tasks.append(asyncio.ensure_future(self.pose_generator(canbus_client)))
+        self.tasks.append(asyncio.create_task(self.pose_generator(canbus_client)))
 
         return await asyncio.gather(run_wrapper(),*self.tasks)
 
