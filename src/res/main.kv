@@ -60,23 +60,20 @@ RelativeLayout:
             id: joystick
         TabbedPanel:
             do_default_tab: False
+            id: tab_root
             TabbedPanelItem:
-                text: "Rgb"
-                on_press: app.update_view('rgb')
+                text: "rgb"
                 Image:
                     id: rgb
             TabbedPanelItem:
-                text: "Disparity"
-                on_press: app.update_view('disparity')
+                text: "disparity"
                 Image:
                     id: disparity
             TabbedPanelItem:
-                text: "Left"
-                on_press: app.update_view('left')
+                text: "left"
                 Image:
                     id: left
             TabbedPanelItem:
-                text: "Right"
-                on_press: app.update_view('right')
+                text: "right"
                 Image:
                     id: right
