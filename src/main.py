@@ -20,8 +20,6 @@ from farm_ng.core.uri_pb2 import Uri
 from turbojpeg import TurboJPEG
 from virtual_joystick.joystick import VirtualJoystickWidget
 
-# import internal libs
-
 # Must come before kivy imports
 os.environ["KIVY_NO_ARGS"] = "1"
 
@@ -192,6 +190,7 @@ class KivyVirtualJoystick(App):
 
             await canbus_client.request_reply("/twist", twist)
             await asyncio.sleep(period)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="template-app")
