@@ -193,22 +193,6 @@ class KivyVirtualJoystick(App):
             await canbus_client.request_reply("/twist", twist)
             await asyncio.sleep(period)
 
-
-def find_config_by_name(
-    service_configs: EventServiceConfigList, name: str
-) -> EventServiceConfig | None:
-    """Utility function to find a service config by name.
-
-    Args:
-        service_configs: List of service configs
-        name: Name of the service to find
-    """
-    for config in service_configs.configs:
-        if config.name == name:
-            return config
-    return None
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="template-app")
 
