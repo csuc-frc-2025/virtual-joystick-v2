@@ -3,7 +3,7 @@
         "virtual-joystick": {
             "name": "virtual-joystick",
             "type": "app",
-            "exec_cmd": "/mnt/managed_home/farm-ng-user-oliverfuchs/virtual-joystick-v2/entry.sh",
+            "exec_cmd": "/mnt/managed_home/farm-ng-user-<USERNAME>/virtual-joystick-v2/entry.sh",
             "display_name": "Virtual Joystick"
         }
     }

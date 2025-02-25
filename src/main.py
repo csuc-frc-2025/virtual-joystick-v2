@@ -16,7 +16,6 @@ from farm_ng.core.event_service_pb2 import EventServiceConfigList
 from farm_ng.core.event_service_pb2 import SubscribeRequest
 from farm_ng.core.events_file_reader import payload_to_protobuf
 from farm_ng.core.events_file_reader import proto_from_json_file
-from farm_ng.core.uri_pb2 import Uri
 from turbojpeg import TurboJPEG
 from virtual_joystick.joystick import VirtualJoystickWidget
 
@@ -110,7 +109,7 @@ class KivyVirtualJoystick(App):
 
         # Confirm that EventClients were created for all required services
         if None in [oak0_client, canbus_client]:
-            raise RuntimeError(f"No {config} service config in {self.service_config}")
+            raise RuntimeError(f"Did not find Oak0 and CAN BUS clients in {self.service_config}")
 
         # Camera task
         self.tasks: list[asyncio.Task] = [
@@ -133,9 +132,10 @@ class KivyVirtualJoystick(App):
             await asyncio.sleep(0.01)
 
         rate = oak_client.config.subscriptions[0].every_n
+        uri = {"path": f"{oak_client.config.name}/{view_name}"}
 
         async for event, payload in oak_client.subscribe(
-            SubscribeRequest(uri=Uri(path=f"/{view_name}"), every_n=rate),
+            SubscribeRequest(uri=uri, every_n=rate),
             decode=False,
         ):
 
@@ -173,9 +173,10 @@ class KivyVirtualJoystick(App):
         joystick: VirtualJoystickWidget = self.root.ids["joystick"]
 
         rate = canbus_client.config.subscriptions[0].every_n
+        uri = {"path": f"{canbus_client.config.name}/state"}
 
         async for event, payload in canbus_client.subscribe(
-            SubscribeRequest(uri=Uri(path="/state"), every_n=rate),
+            SubscribeRequest(uri=uri, every_n=rate),
             decode=False,
         ):
             message = payload_to_protobuf(event, payload)
